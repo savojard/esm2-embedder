@@ -6,6 +6,16 @@
 input_fasta=$(realpath $1)
 output_dir=$(realpath $2)
 esm_model_id=$3
+shard_arg=${4:-}
+
+shard_flag=""
+if [[ -n "${shard_arg}" ]]; then
+  case "${shard_arg}" in
+    1|true|yes|y|shard|--shard-out-dir)
+      shard_flag="--shard-out-dir"
+      ;;
+  esac
+fi
 
 echo $output_dir
 
@@ -17,4 +27,4 @@ docker run --user $(id -u):$(id -g) \
            -v ${esm_models}:/esm-models \
            -e CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES \
            --rm --gpus all \
-           esm2 --model-dir /esm-models/${esm_model_id} --out-dir /workspace/output_dir --save-per-residue --pooling none /workspace/input-fasta.fa
+           esm2 --model-dir /esm-models/${esm_model_id} --out-dir /workspace/output_dir --save-per-residue --pooling none ${shard_flag} /workspace/input-fasta.fa
