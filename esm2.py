@@ -74,7 +74,14 @@ def parse_args():
                    help="Also save per-residue embeddings in each .npz file.")
     p.add_argument("--out-dir", required=True,
                    help="Output directory to store one .npz per sequence.")
+    p.add_argument("--shard-out-dir", action="store_true",
+                   help="Enable two-level accession sharding under --out-dir (disabled by default).")
     return p.parse_args()
+
+def shard_output_dir(out_dir: str, seq_id: str) -> str:
+    shard_one = (seq_id[:2] if len(seq_id) >= 2 else seq_id).ljust(2, "x")
+    shard_two = (seq_id[2:4] if len(seq_id) >= 4 else seq_id[2:]).ljust(2, "x")
+    return os.path.join(out_dir, shard_one, shard_two)
 
 def tokenizer_payload_len(tokenizer, max_len: int) -> int:
     """Compute how many *non-special* tokens can fit given max_len."""
@@ -188,7 +195,11 @@ def main():
                     pooled = per_residue.mean(axis=0, keepdims=False)
 
             # Save per-sequence .npz
-            out_path = os.path.join(args.out_dir, f"{seq_id}.npz")
+            out_dir = args.out_dir
+            if args.shard_out_dir:
+                out_dir = shard_output_dir(args.out_dir, seq_id)
+                os.makedirs(out_dir, exist_ok=True)
+            out_path = os.path.join(out_dir, f"{seq_id}.npz")
             save_dict = {"id": np.array(seq_id, dtype=object)}
             if args.pooling != "none" and pooled is not None:
                 save_dict["pooled"] = pooled.astype(np.float32)
@@ -207,4 +218,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
