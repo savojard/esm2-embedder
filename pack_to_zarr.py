@@ -21,7 +21,7 @@ def load_npz_entry(npz_path: Path) -> Tuple[np.ndarray, str]:
     """Load token embeddings and protein id from an NPZ path."""
     for allow_pickle in (False, True):
         try:
-            with np.load(npz_path, allow_pickle=allow_pickle) as npz:
+            with np.load(npz_path) as npz:
                 token_embeddings = npz["token_embeddings"]
                 protein_id = str(npz["id"].item())
             return token_embeddings, protein_id
