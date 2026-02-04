@@ -17,6 +17,23 @@ import zarr
 from numcodecs import Blosc
 
 
+def load_npz_entry(npz_path: Path) -> Tuple[np.ndarray, str]:
+    """Load token embeddings and protein id from an NPZ path."""
+    try:
+        npz = np.load(npz_path, allow_pickle=False)
+    except ValueError as exc:
+        logging.warning(
+            "Retrying %s with allow_pickle=True due to error: %s", npz_path, exc
+        )
+        npz = np.load(npz_path, allow_pickle=True)
+
+    with npz:
+        token_embeddings = npz["token_embeddings"]
+        protein_id = str(npz["id"].item())
+
+    return token_embeddings, protein_id
+
+
 def iter_shards(input_root: Path, shard_level: int) -> Iterable[Tuple[str, List[Path]]]:
     """Yield shard labels with their corresponding directories."""
     if shard_level not in (1, 2):
@@ -55,31 +72,29 @@ def pass1_scan(
     max_id_bytes = 0
 
     for npz_path in npz_files:
-        with np.load(npz_path, allow_pickle=False) as npz:
-            emb = npz["token_embeddings"]
-            protein_id = npz["id"].item()
+        emb, protein_id = load_npz_entry(npz_path)
 
-            if emb.ndim != 2:
-                raise ValueError(f"Expected 2D token_embeddings in {npz_path}")
+        if emb.ndim != 2:
+            raise ValueError(f"Expected 2D token_embeddings in {npz_path}")
 
-            if embed_dim is None:
-                embed_dim = emb.shape[1]
-            elif emb.shape[1] != embed_dim:
-                raise ValueError(
-                    f"Inconsistent embedding dim in {npz_path}: "
-                    f"{emb.shape[1]} != {embed_dim}"
-                )
+        if embed_dim is None:
+            embed_dim = emb.shape[1]
+        elif emb.shape[1] != embed_dim:
+            raise ValueError(
+                f"Inconsistent embedding dim in {npz_path}: "
+                f"{emb.shape[1]} != {embed_dim}"
+            )
 
-            if dtype is None:
-                dtype = emb.dtype
-            elif emb.dtype != dtype:
-                raise ValueError(
-                    f"Inconsistent dtype in {npz_path}: {emb.dtype} != {dtype}"
-                )
+        if dtype is None:
+            dtype = emb.dtype
+        elif emb.dtype != dtype:
+            raise ValueError(
+                f"Inconsistent dtype in {npz_path}: {emb.dtype} != {dtype}"
+            )
 
-            total_residues += emb.shape[0]
-            num_proteins += 1
-            max_id_bytes = max(max_id_bytes, len(str(protein_id).encode("utf-8")))
+        total_residues += emb.shape[0]
+        num_proteins += 1
+        max_id_bytes = max(max_id_bytes, len(str(protein_id).encode("utf-8")))
 
     if embed_dim is None or dtype is None:
         raise ValueError("No embeddings found to scan.")
@@ -144,9 +159,7 @@ def pass2_write(
     offsets[0] = 0
 
     for idx, npz_path in enumerate(npz_files):
-        with np.load(npz_path, allow_pickle=False) as npz:
-            token_embeddings = npz["token_embeddings"]
-            protein_id = str(npz["id"].item())
+        token_embeddings, protein_id = load_npz_entry(npz_path)
 
         length = token_embeddings.shape[0]
         end_offset = current_offset + length
@@ -258,9 +271,7 @@ def run_check(
 
     failures = 0
     for npz_path in sample_paths:
-        with np.load(npz_path, allow_pickle=False) as npz:
-            token_embeddings = npz["token_embeddings"]
-            protein_id = str(npz["id"].item())
+        token_embeddings, protein_id = load_npz_entry(npz_path)
 
         retrieved = load_protein(str(output_root), protein_id)
 
