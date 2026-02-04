@@ -19,19 +19,22 @@ from numcodecs import Blosc
 
 def load_npz_entry(npz_path: Path) -> Tuple[np.ndarray, str]:
     """Load token embeddings and protein id from an NPZ path."""
-    try:
-        npz = np.load(npz_path, allow_pickle=False)
-    except ValueError as exc:
-        logging.warning(
-            "Retrying %s with allow_pickle=True due to error: %s", npz_path, exc
-        )
-        npz = np.load(npz_path, allow_pickle=True)
+    for allow_pickle in (False, True):
+        try:
+            with np.load(npz_path, allow_pickle=allow_pickle) as npz:
+                token_embeddings = npz["token_embeddings"]
+                protein_id = str(npz["id"].item())
+            return token_embeddings, protein_id
+        except ValueError as exc:
+            if allow_pickle:
+                raise
+            logging.warning(
+                "Retrying %s with allow_pickle=True due to error: %s",
+                npz_path,
+                exc,
+            )
 
-    with npz:
-        token_embeddings = npz["token_embeddings"]
-        protein_id = str(npz["id"].item())
-
-    return token_embeddings, protein_id
+    raise RuntimeError(f"Failed to load {npz_path}")
 
 
 def iter_shards(input_root: Path, shard_level: int) -> Iterable[Tuple[str, List[Path]]]:
