@@ -30,6 +30,14 @@ def directory_store(store_path: Path) -> Any:
     return DirectoryStore(str(store_path))
 
 
+def parse_dtype(value: str) -> np.dtype:
+    """Parse a numpy dtype string for CLI arguments."""
+    try:
+        return np.dtype(value)
+    except TypeError as exc:
+        raise argparse.ArgumentTypeError(f"Invalid dtype: {value}") from exc
+
+
 def load_npz_entry(npz_path: Path) -> Tuple[np.ndarray, str]:
     """Load token embeddings and protein id from an NPZ path."""
     for allow_pickle in (False, True):
@@ -74,6 +82,7 @@ def scan_npz_files(shard_paths: Iterable[Path]) -> List[Path]:
 
 def pass1_scan(
     npz_files: List[Path],
+    forced_dtype: Optional[np.dtype] = None,
 ) -> Tuple[int, int, int, np.dtype, int]:
     """
     First pass: validate shapes/dtypes and compute totals.
@@ -84,7 +93,7 @@ def pass1_scan(
     total_residues = 0
     num_proteins = 0
     embed_dim: Optional[int] = None
-    dtype: Optional[np.dtype] = None
+    dtype: Optional[np.dtype] = forced_dtype
     max_id_bytes = 0
 
     for npz_path in npz_files:
@@ -103,7 +112,7 @@ def pass1_scan(
 
         if dtype is None:
             dtype = emb.dtype
-        elif emb.dtype != dtype:
+        elif forced_dtype is None and emb.dtype != dtype:
             raise ValueError(
                 f"Inconsistent dtype in {npz_path}: {emb.dtype} != {dtype}"
             )
@@ -126,9 +135,9 @@ def create_store(
     dtype: np.dtype,
     max_id_bytes: int,
     chunk_rows: int,
+    compressor: Blosc,
 ) -> zarr.Group:
     """Create a Zarr store with emb, offsets, and ids arrays."""
-    compressor = Blosc(cname="zstd", clevel=3, shuffle=Blosc.BITSHUFFLE)
     store = directory_store(store_path)
     root = zarr.group(store=store, overwrite=True)
 
@@ -176,6 +185,8 @@ def pass2_write(
 
     for idx, npz_path in enumerate(npz_files):
         token_embeddings, protein_id = load_npz_entry(npz_path)
+        if token_embeddings.dtype != emb.dtype:
+            token_embeddings = token_embeddings.astype(emb.dtype, copy=False)
 
         length = token_embeddings.shape[0]
         end_offset = current_offset + length
@@ -195,6 +206,8 @@ def process_shard(
     output_root: Path,
     chunk_rows: int,
     overwrite: bool,
+    forced_dtype: Optional[np.dtype],
+    compressor: Blosc,
 ) -> Tuple[str, int, int, bool]:
     """Process a shard directory list and return summary tuple."""
     npz_files = scan_npz_files(shard_paths)
@@ -217,7 +230,7 @@ def process_shard(
             return (str(store_path.relative_to(output_root)), 0, 0, False)
 
     total_residues, num_proteins, embed_dim, dtype, max_id_bytes = pass1_scan(
-        npz_files
+        npz_files, forced_dtype
     )
     root = create_store(
         store_path,
@@ -227,6 +240,7 @@ def process_shard(
         dtype,
         max_id_bytes,
         chunk_rows,
+        compressor,
     )
 
     proteins_written, residues_written = pass2_write(root, npz_files)
@@ -314,6 +328,23 @@ def parse_args() -> argparse.Namespace:
         help="Chunk rows for embedding array",
     )
     parser.add_argument(
+        "--embedding-dtype",
+        type=parse_dtype,
+        default=None,
+        help="Force embedding dtype (e.g. float16, float32)",
+    )
+    parser.add_argument(
+        "--compressor",
+        default="zstd",
+        help="Compression algorithm for Blosc (default: zstd)",
+    )
+    parser.add_argument(
+        "--clevel",
+        type=int,
+        default=3,
+        help="Compression level for Blosc (default: 3)",
+    )
+    parser.add_argument(
         "--overwrite",
         action="store_true",
         help="Overwrite existing Zarr stores",
@@ -350,6 +381,11 @@ def main() -> None:
     input_root = args.input
     output_root = args.output
     output_root.mkdir(parents=True, exist_ok=True)
+    compressor = Blosc(
+        cname=args.compressor,
+        clevel=args.clevel,
+        shuffle=Blosc.BITSHUFFLE,
+    )
 
     shard_groups = list(iter_shards(input_root, args.shard_level))
     if not shard_groups:
@@ -369,6 +405,8 @@ def main() -> None:
                 output_root,
                 args.chunk_rows,
                 args.overwrite,
+                args.embedding_dtype,
+                compressor,
             ): shard_label
             for shard_label, shard_paths in shard_groups
         }
