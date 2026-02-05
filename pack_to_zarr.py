@@ -41,11 +41,11 @@ def load_npz_entry(npz_path: Path) -> Tuple[np.ndarray, str]:
         except ValueError as exc:
             if allow_pickle:
                 raise
-            logging.warning(
-                "Retrying %s with allow_pickle=True due to error: %s",
-                npz_path,
-                exc,
-            )
+            #logging.warning(
+            #    "Retrying %s with allow_pickle=True due to error: %s",
+            #    npz_path,
+            #    exc,
+            #)
 
     raise RuntimeError(f"Failed to load {npz_path}")
 
