@@ -10,11 +10,24 @@ import random
 import shutil
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import Iterable, List, Optional, Tuple
+from typing import Any, Iterable, List, Optional, Tuple
 
 import numpy as np
 import zarr
 from numcodecs import Blosc
+
+
+def directory_store(store_path: Path) -> Any:
+    """Return a Zarr DirectoryStore compatible with Zarr v2/v3."""
+    if hasattr(zarr, "DirectoryStore"):
+        return zarr.DirectoryStore(str(store_path))
+    try:
+        from zarr.storage import DirectoryStore
+    except ImportError as exc:  # pragma: no cover - defensive import guard
+        raise ImportError(
+            "Zarr DirectoryStore is unavailable; install zarr<3 or upgrade code."
+        ) from exc
+    return DirectoryStore(str(store_path))
 
 
 def load_npz_entry(npz_path: Path) -> Tuple[np.ndarray, str]:
@@ -116,7 +129,7 @@ def create_store(
 ) -> zarr.Group:
     """Create a Zarr store with emb, offsets, and ids arrays."""
     compressor = Blosc(cname="zstd", clevel=3, shuffle=Blosc.BITSHUFFLE)
-    store = zarr.DirectoryStore(str(store_path))
+    store = directory_store(store_path)
     root = zarr.group(store=store, overwrite=True)
 
     root.create_dataset(
