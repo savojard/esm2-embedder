@@ -62,6 +62,8 @@ def parse_args():
                    help='Torch device, e.g. "cuda:0" or "cpu". Default auto.')
     p.add_argument("--dtype", choices=["bf16", "fp32"], default="fp32",
                    help="Computation dtype for inference.")
+    p.add_argument("--output-dtype", choices=["fp16", "fp32", "fp64"], default="fp32",
+                   help="Numpy dtype used when writing embedding arrays into .npz files.")
     p.add_argument("--max-len", type=int, default=1024,
                    help="Max tokenizer length (tokens including specials).")
     p.add_argument("--chunk-size", type=int, default=None,
@@ -129,6 +131,7 @@ def main():
     device = pick_device(args.device)
     use_bf16 = (args.dtype == "bf16") and (device.type == "cuda")
     torch_dtype = torch.bfloat16 if use_bf16 else torch.float32
+    np_output_dtype = {"fp16": np.float16, "fp32": np.float32, "fp64": np.float64}[args.output_dtype]
 
     seqs = read_fasta(args.fasta)
 
@@ -202,9 +205,9 @@ def main():
             out_path = os.path.join(out_dir, f"{seq_id}.npz")
             save_dict = {"id": np.array(seq_id, dtype=object)}
             if args.pooling != "none" and pooled is not None:
-                save_dict["pooled"] = pooled.astype(np.float32)
+                save_dict["pooled"] = pooled.astype(np_output_dtype)
             if args.save_per_residue:
-                save_dict["token_embeddings"] = per_residue.astype(np.float32)
+                save_dict["token_embeddings"] = per_residue.astype(np_output_dtype)
             np.savez_compressed(out_path, **save_dict)
 
             print(f"✅ Saved {out_path}  "
