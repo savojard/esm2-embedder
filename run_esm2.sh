@@ -28,4 +28,4 @@ docker run --user $(id -u):$(id -g) \
            -v ${esm_models}:/esm-models \
            -e CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES \
            --rm --gpus all \
-           esm2 --model-dir /esm-models/${esm_model_id} --out-dir /workspace/output_dir --save-per-residue --pooling none --output-dtype ${output_dtype} ${shard_flag} /workspace/input-fasta.fa
+           docker.beverara.biocomp.unibo.it:5000/esm2 --model-dir /esm-models/${esm_model_id} --out-dir /workspace/output_dir --save-per-residue --pooling none --output-dtype ${output_dtype} ${shard_flag} /workspace/input-fasta.fa
